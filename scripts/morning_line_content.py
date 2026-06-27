@@ -54,6 +54,7 @@ class AffiliateLink:
 @dataclass(frozen=True)
 class PostCandidate:
     category: str
+    product: str
     title: str
     platforms: str
     body: str
@@ -64,6 +65,17 @@ class PostCandidate:
     intent: str
     source_title: str
     source_link: str
+
+
+@dataclass(frozen=True)
+class MediaDraft:
+    platform: str
+    title: str
+    body: str
+    hashtags: str
+    reason: str
+    audience: str
+    affiliate_guide: str
 
 
 def now_jst() -> datetime:
@@ -285,6 +297,7 @@ def build_candidates(
             candidates.append(
                 PostCandidate(
                     category=category,
+                    product=affiliate.product,
                     title=post_title,
                     platforms=profile["platforms"],
                     body=body,
@@ -307,45 +320,144 @@ def build_candidates(
     return candidates
 
 
-def candidate_lines(candidate: PostCandidate, number: int) -> List[str]:
+def ensure_length(platform: str, text: str, minimum: int, maximum: int) -> str:
+    length = len(text)
+    if not minimum <= length <= maximum:
+        raise MorningLineError(
+            f"{platform}本文の文字数が範囲外です: {length}文字（{minimum}〜{maximum}文字）"
+        )
+    return text
+
+
+def platform_drafts(candidate: PostCandidate) -> List[MediaDraft]:
+    topic = short_headline(candidate.source_title, 52)
+    profile = category_profile(candidate.category)
+    disclosure = "※アフィリエイトリンクを含みます。"
+
+    x_body = "\n".join(
+        [
+            f"「{short_headline(candidate.source_title, 34)}」という話題が気になりました。",
+            profile["insight"],
+            f"大事なのは、流行より自分の使い方に合うか。{candidate.product}も比較候補の一つです。押し売りはしません。必要な方だけどうぞ。",
+            disclosure,
+            candidate.planned_link,
+        ]
+    )
+    if len(x_body) < 220:
+        x_body += "\n迷った条件も残して、あとから判断を見直せるようにしています。"
+    if len(x_body) < 220:
+        x_body += "\n必要性を確認してから判断します。"
+    x_body = ensure_length("X", x_body, 220, 260)
+
+    threads_body = "\n\n".join(
+        [
+            f"今日、「{topic}」という話題を見かけました。",
+            "以前の自分なら、新しい情報を見つけた瞬間に『これが正解かも』と飛びついていたと思います。でも、選択肢が増えるほど迷いも増えました。",
+            profile["insight"],
+            "今は、気になった理由、比較した条件、見送った理由まで残しています。決定事項だけより、迷っていた過程の方が、あとで同じことで悩んだときに役立ちます。",
+            "特に意識しているのは、誰かの正解をそのまま借りないこと。予算、使う場所、頻度が違えば答えも変わります。ニュースは結論ではなく、自分の条件を見直すきっかけとして使っています。",
+            f"今回のテーマに関連する比較候補は{candidate.product}。全員に必要とは思っていません。自分の用途と合う人だけ確認できるよう、最後にリンクを置きます。",
+            disclosure + "\n" + candidate.planned_link,
+        ]
+    )
+    threads_body = ensure_length("Threads", threads_body, 400, 700)
+
+    instagram_body = "\n\n".join(
+        [
+            f"【保存用】{short_headline(candidate.source_title, 42)}から考えたこと",
+            "情報を見つけたとき、すぐ結論を出す前に確認していることをまとめました。",
+            "1. 自分の悩みと本当に関係があるか\n2. 今すぐ必要か、後でもよいか\n3. 価格以外に手間が減るか\n4. 使う場所と頻度が決まっているか\n5. 見送る理由も説明できるか",
+            profile["insight"],
+            "この5つをメモしておくと、比較中の迷いが整理しやすくなります。あとで見返せるよう、気になる方は保存して使ってください。",
+            "比較した日付と、その時点で迷っていた理由も一緒に残すのがおすすめです。条件が変わったとき、前の判断を責めずに見直しやすくなります。",
+            f"関連アイテムとして比較しているのは{candidate.product}です。必要な人だけ確認できるようリンクを置きます。",
+            disclosure + "\n" + candidate.planned_link,
+        ]
+    )
+    instagram_body = ensure_length("Instagram", instagram_body, 400, 1000)
+
+    note_parts = [
+        f"# {topic}から考える、情報と道具の選び方",
+        "## はじめに",
+        f"今日、{candidate.category}に関する「{topic}」という話題を見かけました。ニュースの見出しは、新しい選択肢を知る入口になります。一方で、見出しだけを見て自分にも必要だと判断すると、情報に振り回されやすくなります。この記事では、話題そのものを断定的に解説するのではなく、自分の暮らしや作業へ置き換えるときの考え方を整理します。",
+        "## 新しい情報ほど、いったん自分の条件へ戻す",
+        profile["insight"] + " 情報の新しさと、自分にとっての必要性は別です。まず、何に困っているのか、どこに時間がかかっているのか、今の方法で何が不満なのかを書き出します。問題が言葉になっていない状態では、どの商品も魅力的に見えてしまいます。",
+        "## 決定事項より、迷った過程を残す",
+        "最終的に選んだものだけを記録すると、数か月後には判断理由を忘れてしまいます。比較した候補、気になった点、見送った理由、予算とのバランスまで残すと、次の判断に使える自分専用のデータになります。迷っている状態は失敗ではなく、条件を整理している途中です。",
+        "## 比較するときの5つの質問",
+        "私が確認するのは、1つ目が『どの悩みを減らすものか』、2つ目が『使う場面が具体的か』、3つ目が『価格以外の負担はないか』、4つ目が『今買う理由があるか』、5つ目が『合わなかった場合に戻せるか』です。この5問に答えられないときは、すぐに決めず保留にします。",
+        "## メリットだけで決めない",
+        "紹介文では便利な点が目立ちますが、置き場所、接続方法、学習コスト、使う頻度などの条件も確認が必要です。良い商品でも、生活や作業の流れに合わなければ使わなくなります。逆に、派手な機能がなくても毎日の小さな手間を減らすものは長く使いやすいです。",
+        f"## 今回の比較候補: {candidate.product}",
+        f"今回のテーマに関連する候補として、{candidate.product}を確認しています。ここでは『絶対におすすめ』とは言いません。用途、予算、すでに持っている機器との相性によって答えが変わるからです。{candidate.affiliate_guide}",
+        "## 投稿へ使う前の確認",
+        "元記事を開き、発行日と内容を確認します。次に、自分が実際に確認した事実と、まだ比較中のことを分けます。使っていない商品について使用感を断定せず、予測や印象はそのまま予測や印象として書きます。アフィリエイトリンクを使う場合は、広告であることを本文中で分かるように表示します。",
+        "## まとめ",
+        "情報収集の目的は、すぐ買うことではなく、自分に合う判断材料を増やすことです。気になったニュース、比較条件、迷った理由を残しておけば、焦らず選べます。必要な人だけが次の確認へ進める導線にして、合わない人へ無理に勧めない。この距離感を今後の発信でも大切にします。",
+        disclosure,
+        candidate.planned_link,
+    ]
+    note_fillers = [
+        "## 継続して見直す\n一度決めた基準も、生活や仕事が変われば合わなくなることがあります。購入後や見送り後にも、実際に困りごとが減ったか、別の手段で解決できなかったかを振り返ります。判断を固定せず更新できるようにすると、次の選択が少し楽になります。",
+        "## 読者へ伝えるときの姿勢\n発信では、結論だけでなく前提条件も書きます。誰にでも当てはまるように見せず、どんな状況で役立ちそうか、どんな人には不要かも添えます。良い点と注意点の両方がある方が、読む人は自分で判断しやすくなります。",
+        "## 小さく試す\nいきなり環境を全部変えるのではなく、今ある道具で試せることから始めます。試した結果を記録し、不足が明確になってから商品を比較します。この順番なら、話題性だけで買う失敗を減らせます。",
+    ]
+    note_body = "\n\n".join(note_parts)
+    for filler in note_fillers:
+        if len(note_body) >= 1500:
+            break
+        note_body += "\n\n" + filler
+    note_body = ensure_length("note", note_body, 1500, 3000)
+
     return [
-        f"## 候補{number}: {candidate.category}",
-        "",
-        f"- 投稿タイトル: {candidate.title}",
-        f"- 投稿先おすすめ: {candidate.platforms}",
-        f"- 想定読者: {candidate.audience}",
-        f"- 投稿意図: {candidate.intent}",
-        f"- アフィリエイト導線: {candidate.affiliate_guide}",
-        f"- 使用予定リンク: {candidate.planned_link}",
-        f"- 参考ネタ: [{candidate.source_title}]({candidate.source_link})",
-        "",
-        "### 本文",
-        "",
-        candidate.body,
-        "",
-        "### ハッシュタグ",
-        "",
-        candidate.hashtags,
+        MediaDraft("X", candidate.title, x_body, "#AI活用 #作業環境 #PR" if "AI" in candidate.category else "#ガジェット #比較 #PR", "速報性のある話題を短く共有し、反応を確認しやすい", candidate.audience, candidate.affiliate_guide),
+        MediaDraft("Threads", candidate.title, threads_body, "#AI活用 #ガジェット #作業効率化 #比較中 #PR", "迷いから判断軸へ進むストーリーが読まれやすい", candidate.audience, candidate.affiliate_guide),
+        MediaDraft("Instagram", candidate.title, instagram_body, "#ガジェット #デスク環境 #作業効率化 #買い物メモ #保存版 #PR", "チェックリスト形式で保存・見返しにつながりやすい", candidate.audience, candidate.affiliate_guide),
+        MediaDraft("note", candidate.title, note_body, "#AI活用 #ガジェット #比較 #PR", "背景、判断軸、注意点までブログ形式で深く伝えられる", candidate.audience, candidate.affiliate_guide),
     ]
 
 
-def markdown_text(candidates: List[PostCandidate]) -> str:
+def media_lines(draft: MediaDraft) -> List[str]:
+    return [
+        f"## {draft.platform}",
+        "",
+        f"- 投稿タイトル: {draft.title}",
+        f"- 文字数: {len(draft.body)}",
+        f"- おすすめ理由: {draft.reason}",
+        f"- 想定読者: {draft.audience}",
+        f"- アフィリエイト導線: {draft.affiliate_guide}",
+        "",
+        "### 本文",
+        "",
+        draft.body,
+        "",
+        "### ハッシュタグ",
+        "",
+        draft.hashtags,
+    ]
+
+
+def markdown_text(candidate: PostCandidate, drafts: List[MediaDraft]) -> str:
     now = now_jst()
     lines = [
         "---",
-        "type: morning_affiliate_post_candidates",
+        "type: morning_multi_platform_affiliate_drafts",
         f"date: {now:%Y-%m-%d}",
         f"created_at: {now:%Y-%m-%d %H:%M:%S %Z}",
         "source: Google News RSS",
         "auto_post: false",
         "---",
         "",
-        f"# 朝のアフィリエイト投稿候補 {now:%Y-%m-%d}",
+        f"# 朝の媒体別アフィリエイト投稿案 {now:%Y-%m-%d}",
         "",
-        "Research.mdのカテゴリをもとに作成。自動投稿せず、人間が確認してから使用する。",
+        "同じネタから4媒体分を作成。自動投稿せず、人間が確認してから使用する。",
+        "",
+        f"- カテゴリ: {candidate.category}",
+        f"- 参考ネタ: [{candidate.source_title}]({candidate.source_link})",
+        f"- 使用予定リンク: {candidate.planned_link}",
     ]
-    for number, candidate in enumerate(candidates, 1):
-        lines.extend([""] + candidate_lines(candidate, number))
+    for draft in drafts:
+        lines.extend([""] + media_lines(draft))
     lines.extend(
         [
             "",
@@ -362,28 +474,29 @@ def markdown_text(candidates: List[PostCandidate]) -> str:
     return "\n".join(lines)
 
 
-def success_line_message(candidates: List[PostCandidate], output_path: Path) -> str:
-    lines = ["【朝のResearch AI】", "", f"本日の投稿候補は{len(candidates)}件です。"]
-    for number, candidate in enumerate(candidates, 1):
-        lines.extend(
-            [
-                "",
-                f"【候補{number}｜{candidate.category}】",
-                f"投稿タイトル: {candidate.title}",
-                f"投稿先おすすめ: {candidate.platforms}",
-                "",
-                "本文:",
-                candidate.body,
-                "",
-                f"ハッシュタグ: {candidate.hashtags}",
-                f"アフィリエイト導線: {candidate.affiliate_guide}",
-                f"使用予定リンク: {candidate.planned_link}",
-                f"想定読者: {candidate.audience}",
-                f"投稿意図: {candidate.intent}",
-            ]
+def success_line_message(drafts: List[MediaDraft], output_path: Path) -> str:
+    sections: List[str] = []
+    for draft in drafts:
+        sections.append(
+            "\n".join(
+                [
+                    f"【{draft.platform}】",
+                    f"投稿タイトル: {draft.title}",
+                    f"おすすめ理由: {draft.reason}",
+                    f"想定読者: {draft.audience}",
+                    f"アフィリエイト導線: {draft.affiliate_guide}",
+                    "",
+                    draft.body,
+                    "",
+                    f"ハッシュタグ: {draft.hashtags}",
+                ]
+            )
         )
-    lines.extend(["", f"保存先: {output_path.relative_to(ROOT_DIR)}", "", "内容を確認してから手動投稿してください。"])
-    return "\n".join(lines)[:5000]
+    message = "\n\n────────\n\n".join(sections)
+    message += f"\n\n保存先: {output_path.relative_to(ROOT_DIR)}\n内容を確認してから手動投稿してください。"
+    if len(message) > 5000:
+        raise MorningLineError(f"LINE本文が5000文字を超えています: {len(message)}文字")
+    return message
 
 
 def workflow_run_url() -> str:
@@ -486,15 +599,18 @@ def run(dry_run: bool = False) -> Path:
     affiliates = parse_affiliate_links(AFFILIATE_FILE)
     collected = collect_topics(categories, affiliates)
     candidates = build_candidates(collected, affiliates)
+    selected = candidates[now_jst().date().toordinal() % len(candidates)]
+    drafts = platform_drafts(selected)
     GENERATED_DIR.mkdir(parents=True, exist_ok=True)
-    output_path = GENERATED_DIR / f"{now_jst():%Y-%m-%d}_アフィリエイト投稿候補.md"
-    output_path.write_text(markdown_text(candidates), encoding="utf-8")
-    message = success_line_message(candidates, output_path)
+    output_path = GENERATED_DIR / f"{now_jst():%Y-%m-%d}_媒体別アフィリエイト投稿案.md"
+    output_path.write_text(markdown_text(selected, drafts), encoding="utf-8")
+    message = success_line_message(drafts, output_path)
     if dry_run:
         print(message)
     else:
         send_line(message)
-    write_log("success", f"投稿候補を{len(candidates)}件生成", output_path)
+    lengths = ", ".join(f"{draft.platform}:{len(draft.body)}" for draft in drafts)
+    write_log("success", f"同一ネタから4媒体分を生成（{lengths}）", output_path)
     print(output_path.relative_to(ROOT_DIR))
     return output_path
 
