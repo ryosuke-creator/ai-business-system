@@ -74,6 +74,8 @@ python3 scripts/morning_line_content.py --dry-run
 ```
 
 Secrets自体が未設定の場合はLINE APIを呼べないため、Actionsのログで設定不足を確認する。
+workflowはネタ収集前にLINE SecretsとAPI接続を検証する。`401`の場合は
+`LINE_CHANNEL_ACCESS_TOKEN`をLINE Developersで再発行し、GitHub Secretを上書きする。
 
 ## 公開データの注意
 

@@ -25,6 +25,7 @@ RESEARCH_FILE = Path(os.environ.get("RESEARCH_FILE", ROOT_DIR / "github_data" / 
 GENERATED_DIR = Path(os.environ.get("GENERATED_DIR", ROOT_DIR / "github_data" / "Generated"))
 LOG_DIR = Path(os.environ.get("LOG_DIR", ROOT_DIR / "github_data" / "logs"))
 LINE_ENDPOINT = "https://api.line.me/v2/bot/message/push"
+LINE_BOT_INFO_ENDPOINT = "https://api.line.me/v2/bot/info"
 JST = ZoneInfo("Asia/Tokyo")
 
 
@@ -198,13 +199,39 @@ def failure_line_message(reason: str) -> str:
     )
 
 
-def send_line(text: str) -> None:
+def line_credentials() -> tuple[str, str]:
     token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "").strip()
     user_id = os.environ.get("LINE_TO_USER_ID", "").strip()
     if not token:
         raise MorningLineError("LINE_CHANNEL_ACCESS_TOKENが未設定です")
     if not user_id:
         raise MorningLineError("LINE_TO_USER_IDが未設定です")
+    if len(token) < 100:
+        raise MorningLineError("LINE_CHANNEL_ACCESS_TOKENが短すぎます。GitHub Secretを再登録してください")
+    if not re.fullmatch(r"U[0-9a-fA-F]{32}", user_id):
+        raise MorningLineError("LINE_TO_USER_IDの形式が正しくありません")
+    return token, user_id
+
+
+def check_line_connection() -> None:
+    token, _ = line_credentials()
+    request = Request(LINE_BOT_INFO_ENDPOINT, headers={"Authorization": f"Bearer {token}"})
+    try:
+        with urlopen(request, timeout=30) as response:
+            response.read()
+    except HTTPError as exc:
+        if exc.code == 401:
+            raise MorningLineError(
+                "GitHub Secret LINE_CHANNEL_ACCESS_TOKENが無効または期限切れです"
+            ) from exc
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise MorningLineError(f"LINE接続確認エラー HTTP {exc.code}: {detail[:300]}") from exc
+    except URLError as exc:
+        raise MorningLineError(f"LINE接続確認エラー: {exc.reason}") from exc
+
+
+def send_line(text: str) -> None:
+    token, user_id = line_credentials()
 
     payload = {"to": user_id, "messages": [{"type": "text", "text": text[:5000]}]}
     request = Request(
@@ -218,6 +245,10 @@ def send_line(text: str) -> None:
             response.read()
     except HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
+        if exc.code == 401:
+            raise MorningLineError(
+                "GitHub Secret LINE_CHANNEL_ACCESS_TOKENが無効または期限切れです"
+            ) from exc
         raise MorningLineError(f"LINE送信エラー HTTP {exc.code}: {detail[:300]}") from exc
     except URLError as exc:
         raise MorningLineError(f"LINE接続エラー: {exc.reason}") from exc
@@ -260,8 +291,18 @@ def run(dry_run: bool = False) -> Path:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="LINEへ送らずに収集・保存する")
+    parser.add_argument("--check-line", action="store_true", help="LINE SecretsとAPI接続だけを確認する")
     parser.add_argument("--notify-failure", metavar="REASON", help="workflow失敗通知だけを送る")
     args = parser.parse_args()
+
+    if args.check_line:
+        try:
+            check_line_connection()
+            print("LINE credentials OK")
+            return 0
+        except Exception as exc:
+            print(f"LINE credentials error: {exc}", file=sys.stderr)
+            return 1
 
     if args.notify_failure:
         try:

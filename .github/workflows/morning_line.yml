@@ -37,6 +37,9 @@ jobs:
       - name: Prepare output directories
         run: mkdir -p github_data/Generated github_data/logs
 
+      - name: Validate LINE Secrets
+        run: python3 scripts/morning_line_content.py --check-line
+
       - name: Collect topics, save Markdown, and notify LINE
         run: python3 scripts/morning_line_content.py
 
