@@ -1,15 +1,18 @@
 # COSP Morning Research
 
-Macの電源状態に依存せず、GitHub Actionsだけで毎朝のネタ収集、Markdown保存、LINE通知を実行する。
+Macの電源状態に依存せず、GitHub Actionsだけで毎朝のネタ収集、アフィリエイト投稿案作成、Markdown保存、LINE通知を実行する。自動投稿は行わない。
 
 ## 毎朝の処理
 
 1. `github_data/Research.md`からカテゴリとキーワードを読む
 2. Google News RSSから各カテゴリのネタを収集する
-3. `github_data/Generated/YYYY-MM-DD_朝のネタ収集.md`へ保存する
-4. LINE Messaging APIで個人宛てに成功通知を1通送る
-5. 生成Markdownと実行ログをリポジトリへcommitする
-6. 処理失敗時はLINEへ失敗通知を送る
+3. `github_data/Affiliate_Links.md`から関連リンクを選ぶ
+4. 3〜5件の投稿文を作り、`github_data/Generated/YYYY-MM-DD_アフィリエイト投稿候補.md`へ保存する
+5. LINE Messaging APIで、SNSへコピーできる投稿案を個人宛てに1通送る
+6. 生成Markdownと実行ログをリポジトリへcommitする
+7. 処理失敗時はLINEへ失敗通知を送る
+
+投稿候補には、タイトル、投稿先、本文、ハッシュタグ、アフィリエイト導線、使用予定リンク、想定読者、投稿意図を含める。リンクがある本文には広告表示を入れる。
 
 ## 実行時刻
 
@@ -52,16 +55,23 @@ python3 scripts/morning_line_content.py --dry-run
 ## 正常時のLINE
 
 ```text
-【朝のAI秘書】
-今朝の投稿ネタを収集しました。
+【朝のResearch AI】
+本日の投稿候補は3件です。
 
-■ 家づくり
-・記事タイトル
+【候補1｜家づくり】
+投稿タイトル: ...
+投稿先おすすめ: Threads / X
 
-■ AI活用
-・記事タイトル
+本文:
+...
+※アフィリエイトリンクを含みます。
+https://...
 
-保存先: github_data/Generated/YYYY-MM-DD_朝のネタ収集.md
+ハッシュタグ: ...
+アフィリエイト導線: ...
+使用予定リンク: ...
+想定読者: ...
+投稿意図: ...
 ```
 
 ## 失敗時のLINE

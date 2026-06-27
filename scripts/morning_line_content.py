@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 RESEARCH_FILE = Path(os.environ.get("RESEARCH_FILE", ROOT_DIR / "github_data" / "Research.md"))
+AFFILIATE_FILE = Path(os.environ.get("AFFILIATE_FILE", ROOT_DIR / "github_data" / "Affiliate_Links.md"))
 GENERATED_DIR = Path(os.environ.get("GENERATED_DIR", ROOT_DIR / "github_data" / "Generated"))
 LOG_DIR = Path(os.environ.get("LOG_DIR", ROOT_DIR / "github_data" / "logs"))
 LINE_ENDPOINT = "https://api.line.me/v2/bot/message/push"
@@ -39,6 +40,30 @@ class Topic:
     link: str
     published: str
     source: str
+
+
+@dataclass(frozen=True)
+class AffiliateLink:
+    category: str
+    product: str
+    url: str
+    keywords: tuple[str, ...]
+    guide: str
+
+
+@dataclass(frozen=True)
+class PostCandidate:
+    category: str
+    title: str
+    platforms: str
+    body: str
+    hashtags: str
+    affiliate_guide: str
+    planned_link: str
+    audience: str
+    intent: str
+    source_title: str
+    source_link: str
 
 
 def now_jst() -> datetime:
@@ -76,16 +101,44 @@ def parse_research(path: Path) -> Dict[str, List[str]]:
     return categories
 
 
-def google_news_rss_url(category: str, keywords: List[str]) -> str:
+def parse_affiliate_links(path: Path) -> Dict[str, List[AffiliateLink]]:
+    if not path.exists():
+        raise MorningLineError(f"Affiliate_Links.mdが見つかりません: {path}")
+
+    links: Dict[str, List[AffiliateLink]] = {}
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line.startswith("|"):
+            continue
+        cells = [clean_text(cell) for cell in line.strip("|").split("|")]
+        if len(cells) != 5 or cells[0] in {"カテゴリ", "---"}:
+            continue
+        if all(re.fullmatch(r":?-+:?", cell) for cell in cells):
+            continue
+        category, product, url, keywords_text, guide = cells
+        keywords = tuple(clean_text(word) for word in keywords_text.split(",") if clean_text(word))
+        if category and product and url.startswith("https://") and keywords and guide:
+            links.setdefault(category, []).append(AffiliateLink(category, product, url, keywords, guide))
+
+    if not links:
+        raise MorningLineError("Affiliate_Links.mdに有効なリンクがありません")
+    return links
+
+
+def google_news_rss_url(
+    category: str, keywords: List[str], focus_keywords: tuple[str, ...] = ()
+) -> str:
     terms = " OR ".join(f'"{word}"' for word in keywords)
-    query = quote_plus(f"{category} ({terms}) when:7d")
+    focus = " OR ".join(f'"{word}"' for word in focus_keywords)
+    focus_query = f" ({focus})" if focus else ""
+    query = quote_plus(f"{category} ({terms}){focus_query} when:14d")
     return f"https://news.google.com/rss/search?q={query}&hl=ja&gl=JP&ceid=JP:ja"
 
 
-def fetch_rss(url: str, limit: int = 5) -> List[Topic]:
+def fetch_rss(url: str, limit: int = 10) -> List[Topic]:
     request = Request(url, headers={"User-Agent": "COSP-Morning-Research/1.0"})
     try:
-        with urlopen(request, timeout=30) as response:
+        with urlopen(request, timeout=15) as response:
             payload = response.read()
     except HTTPError as exc:
         raise MorningLineError(f"RSS取得エラー HTTP {exc.code}") from exc
@@ -118,19 +171,32 @@ def fetch_rss(url: str, limit: int = 5) -> List[Topic]:
     return topics
 
 
-def collect_topics(categories: Dict[str, List[str]]) -> Dict[str, List[Topic]]:
+def collect_topics(
+    categories: Dict[str, List[str]], affiliates: Dict[str, List[AffiliateLink]]
+) -> Dict[str, List[Topic]]:
     collected: Dict[str, List[Topic]] = {}
     errors: List[str] = []
-    for category, keywords in categories.items():
-        try:
-            topics = fetch_rss(google_news_rss_url(category, keywords))
-        except MorningLineError as exc:
-            errors.append(f"{category}: {exc}")
+    for category, category_affiliates in affiliates.items():
+        research_keywords = categories.get(category)
+        if not research_keywords:
+            errors.append(f"{category}: Research.mdに同名カテゴリなし")
             continue
-        if topics:
-            collected[category] = topics
-        else:
-            errors.append(f"{category}: 該当記事なし")
+        seen = {(topic.title, topic.link) for topic in collected.get(category, [])}
+        for affiliate in category_affiliates:
+            try:
+                topics = fetch_rss(
+                    google_news_rss_url(category, research_keywords, affiliate.keywords)
+                )
+            except MorningLineError as exc:
+                errors.append(f"{category}/{affiliate.product}: {exc}")
+                continue
+            for topic in topics:
+                key = (topic.title, topic.link)
+                if key not in seen:
+                    collected.setdefault(category, []).append(topic)
+                    seen.add(key)
+            if not topics:
+                errors.append(f"{category}/{affiliate.product}: 該当記事なし")
 
     if not collected:
         detail = " / ".join(errors) if errors else "取得結果なし"
@@ -138,42 +204,185 @@ def collect_topics(categories: Dict[str, List[str]]) -> Dict[str, List[Topic]]:
     return collected
 
 
-def markdown_text(categories: Dict[str, List[str]], collected: Dict[str, List[Topic]]) -> str:
+def category_profile(category: str) -> Dict[str, str]:
+    if "家づくり" in category:
+        return {
+            "platforms": "Threads / X",
+            "audience": "これから家づくりを始める人、設備や間取りを比較中の人",
+            "intent": "ニュースを自分の家づくりへ置き換える視点を共有する",
+            "insight": "家づくり中は、決まったことだけでなく、迷った理由や比較した条件を残す方があとで役立つと感じています。",
+            "hashtags": "#家づくり #平屋 #後悔しない家づくり #PR",
+        }
+    if "AI" in category:
+        return {
+            "platforms": "X / note",
+            "audience": "ChatGPTやCodexを仕事や発信に取り入れたい人",
+            "intent": "AIニュースを、毎日の作業改善という現実的な視点で伝える",
+            "insight": "AIは新機能を追うだけより、入力・確認・保存の流れを固定した方が日常で使い続けやすいです。",
+            "hashtags": "#AI活用 #ChatGPT #Codex #自動化 #PR",
+        }
+    if "ガジェット" in category:
+        return {
+            "platforms": "Threads / Instagram",
+            "audience": "撮影機材やデスク環境を改善したい人",
+            "intent": "話題の商品を、スペックではなく使う場面から考えるきっかけにする",
+            "insight": "ガジェットは性能だけで選ぶと持て余すことがあります。先に使う場面を決めると、必要な機能が見えやすくなります。",
+            "hashtags": "#ガジェット #デスク環境 #動画制作 #Amazon #PR",
+        }
+    return {
+        "platforms": "Threads / note",
+        "audience": "暮らしを少し楽にしたい人",
+        "intent": "ニュースを日々の工夫へ置き換えて共有する",
+        "insight": "便利そうという印象だけで決めず、自分の生活で続けられるかを考えることが大切です。",
+        "hashtags": "#暮らし #家事効率化 #PR",
+    }
+
+
+def short_headline(title: str, limit: int = 84) -> str:
+    headline = title.rsplit(" - ", 1)[0].strip()
+    return headline if len(headline) <= limit else headline[: limit - 1].rstrip() + "…"
+
+
+def build_candidates(
+    collected: Dict[str, List[Topic]], affiliates: Dict[str, List[AffiliateLink]], limit: int = 5
+) -> List[PostCandidate]:
+    candidates: List[PostCandidate] = []
+    for category, category_affiliates in affiliates.items():
+        topics = collected.get(category, [])
+        if not topics:
+            continue
+        profile = category_profile(category)
+        unused_topics = list(topics)
+        for affiliate in category_affiliates:
+            if not unused_topics:
+                break
+            topic = max(
+                unused_topics,
+                key=lambda item: sum(
+                    1 for keyword in affiliate.keywords if keyword.lower() in item.title.lower()
+                ),
+            )
+            score = sum(
+                1 for keyword in affiliate.keywords if keyword.lower() in topic.title.lower()
+            )
+            if score == 0:
+                continue
+            unused_topics.remove(topic)
+            headline = short_headline(topic.title)
+            post_title = short_headline(topic.title, 54) + "を見て考えたこと"
+            affiliate_guide = affiliate.guide + " 必要な方だけ確認してください。"
+            body = "\n".join(
+                [
+                    f"「{headline}」という話題を見かけました。",
+                    "",
+                    profile["insight"],
+                    "",
+                    affiliate_guide,
+                    "※アフィリエイトリンクを含みます。",
+                    affiliate.url,
+                ]
+            )
+            candidates.append(
+                PostCandidate(
+                    category=category,
+                    title=post_title,
+                    platforms=profile["platforms"],
+                    body=body,
+                    hashtags=profile["hashtags"],
+                    affiliate_guide=affiliate_guide,
+                    planned_link=affiliate.url,
+                    audience=profile["audience"],
+                    intent=profile["intent"],
+                    source_title=topic.title,
+                    source_link=topic.link,
+                )
+            )
+            if len(candidates) >= limit:
+                return candidates
+
+    if len(candidates) < 3:
+        raise MorningLineError(
+            "投稿候補が3件未満です。Research.mdとAffiliate_Links.mdのカテゴリ名を合わせてください"
+        )
+    return candidates
+
+
+def candidate_lines(candidate: PostCandidate, number: int) -> List[str]:
+    return [
+        f"## 候補{number}: {candidate.category}",
+        "",
+        f"- 投稿タイトル: {candidate.title}",
+        f"- 投稿先おすすめ: {candidate.platforms}",
+        f"- 想定読者: {candidate.audience}",
+        f"- 投稿意図: {candidate.intent}",
+        f"- アフィリエイト導線: {candidate.affiliate_guide}",
+        f"- 使用予定リンク: {candidate.planned_link}",
+        f"- 参考ネタ: [{candidate.source_title}]({candidate.source_link})",
+        "",
+        "### 本文",
+        "",
+        candidate.body,
+        "",
+        "### ハッシュタグ",
+        "",
+        candidate.hashtags,
+    ]
+
+
+def markdown_text(candidates: List[PostCandidate]) -> str:
     now = now_jst()
     lines = [
         "---",
-        "type: morning_research",
+        "type: morning_affiliate_post_candidates",
         f"date: {now:%Y-%m-%d}",
         f"created_at: {now:%Y-%m-%d %H:%M:%S %Z}",
         "source: Google News RSS",
+        "auto_post: false",
         "---",
         "",
-        f"# 朝のネタ収集 {now:%Y-%m-%d}",
+        f"# 朝のアフィリエイト投稿候補 {now:%Y-%m-%d}",
         "",
-        "Research.mdのカテゴリをもとに収集。投稿前にリンク先の内容を確認する。",
+        "Research.mdのカテゴリをもとに作成。自動投稿せず、人間が確認してから使用する。",
     ]
-    for category, keywords in categories.items():
-        lines.extend(["", f"## {category}", "", f"調査キーワード: {', '.join(keywords)}", ""])
-        topics = collected.get(category, [])
-        if not topics:
-            lines.append("- 取得できませんでした")
-            continue
-        for topic in topics:
-            meta = " / ".join(part for part in [topic.source, topic.published] if part)
-            lines.append(f"- [{topic.title}]({topic.link})")
-            if meta:
-                lines.append(f"  - {meta}")
-    lines.extend(["", "## 投稿前チェック", "", "- [ ] 元記事を開いて事実関係を確認した", "- [ ] 投稿日と情報の鮮度を確認した", "- [ ] 個人情報や未公開情報を含めていない", ""])
+    for number, candidate in enumerate(candidates, 1):
+        lines.extend([""] + candidate_lines(candidate, number))
+    lines.extend(
+        [
+            "",
+            "## 投稿前チェック",
+            "",
+            "- [ ] 元記事を開いて事実関係を確認した",
+            "- [ ] 商品との関連が不自然ではない",
+            "- [ ] アフィリエイト表示とリンクを確認した",
+            "- [ ] 実際に確認していない体験を断定していない",
+            "- [ ] 自動投稿ではなく人間が確認した",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 
-def success_line_message(collected: Dict[str, List[Topic]], output_path: Path) -> str:
-    lines = ["【朝のAI秘書】", "", "今朝の投稿ネタを収集しました。"]
-    for category, topics in collected.items():
-        lines.extend(["", f"■ {category}"])
-        for topic in topics[:2]:
-            lines.append(f"・{topic.title}")
-    lines.extend(["", f"保存先: {output_path.relative_to(ROOT_DIR)}", "", "投稿前に元記事を確認してください。"])
+def success_line_message(candidates: List[PostCandidate], output_path: Path) -> str:
+    lines = ["【朝のResearch AI】", "", f"本日の投稿候補は{len(candidates)}件です。"]
+    for number, candidate in enumerate(candidates, 1):
+        lines.extend(
+            [
+                "",
+                f"【候補{number}｜{candidate.category}】",
+                f"投稿タイトル: {candidate.title}",
+                f"投稿先おすすめ: {candidate.platforms}",
+                "",
+                "本文:",
+                candidate.body,
+                "",
+                f"ハッシュタグ: {candidate.hashtags}",
+                f"アフィリエイト導線: {candidate.affiliate_guide}",
+                f"使用予定リンク: {candidate.planned_link}",
+                f"想定読者: {candidate.audience}",
+                f"投稿意図: {candidate.intent}",
+            ]
+        )
+    lines.extend(["", f"保存先: {output_path.relative_to(ROOT_DIR)}", "", "内容を確認してから手動投稿してください。"])
     return "\n".join(lines)[:5000]
 
 
@@ -274,16 +483,18 @@ def write_log(status: str, detail: str, output_path: Path | None = None) -> Path
 
 def run(dry_run: bool = False) -> Path:
     categories = parse_research(RESEARCH_FILE)
-    collected = collect_topics(categories)
+    affiliates = parse_affiliate_links(AFFILIATE_FILE)
+    collected = collect_topics(categories, affiliates)
+    candidates = build_candidates(collected, affiliates)
     GENERATED_DIR.mkdir(parents=True, exist_ok=True)
-    output_path = GENERATED_DIR / f"{now_jst():%Y-%m-%d}_朝のネタ収集.md"
-    output_path.write_text(markdown_text(categories, collected), encoding="utf-8")
-    message = success_line_message(collected, output_path)
+    output_path = GENERATED_DIR / f"{now_jst():%Y-%m-%d}_アフィリエイト投稿候補.md"
+    output_path.write_text(markdown_text(candidates), encoding="utf-8")
+    message = success_line_message(candidates, output_path)
     if dry_run:
         print(message)
     else:
         send_line(message)
-    write_log("success", f"{len(collected)}カテゴリを収集", output_path)
+    write_log("success", f"投稿候補を{len(candidates)}件生成", output_path)
     print(output_path.relative_to(ROOT_DIR))
     return output_path
 

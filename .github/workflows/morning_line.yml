@@ -20,6 +20,7 @@ jobs:
     env:
       TZ: Asia/Tokyo
       RESEARCH_FILE: ${{ github.workspace }}/github_data/Research.md
+      AFFILIATE_FILE: ${{ github.workspace }}/github_data/Affiliate_Links.md
       GENERATED_DIR: ${{ github.workspace }}/github_data/Generated
       LOG_DIR: ${{ github.workspace }}/github_data/logs
       LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
