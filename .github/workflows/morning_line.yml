@@ -1,0 +1,71 @@
+name: Morning Research and LINE
+
+on:
+  schedule:
+    # 07:00 JST is 22:00 UTC on the previous day.
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: morning-research-line
+  cancel-in-progress: false
+
+jobs:
+  collect-and-notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TZ: Asia/Tokyo
+      RESEARCH_FILE: ${{ github.workspace }}/github_data/Research.md
+      GENERATED_DIR: ${{ github.workspace }}/github_data/Generated
+      LOG_DIR: ${{ github.workspace }}/github_data/logs
+      LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+      LINE_TO_USER_ID: ${{ secrets.LINE_TO_USER_ID }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Prepare output directories
+        run: mkdir -p github_data/Generated github_data/logs
+
+      - name: Collect topics, save Markdown, and notify LINE
+        run: python3 scripts/morning_line_content.py
+
+      - name: Persist generated Markdown and logs
+        if: always()
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A -- github_data/Generated github_data/logs
+          if git diff --cached --quiet; then
+            echo "No generated files to commit"
+          else
+            git commit -m "chore: save morning research $(date +%F) [skip ci]"
+            git push
+          fi
+
+      - name: Upload run files
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: morning-research-${{ github.run_id }}
+          path: |
+            github_data/Generated/
+            github_data/logs/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Notify LINE when workflow failed
+        if: failure()
+        run: python3 scripts/morning_line_content.py --notify-failure "GitHub Actionsの朝処理に失敗しました"

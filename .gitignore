@@ -1,0 +1,37 @@
+# This Vault contains private notes. Only the explicit GitHub Actions allowlist is publishable.
+/*
+!/.gitignore
+!/README.md
+!/.github/
+!/Automations/
+!/github_data/
+!/scripts/
+
+/.github/*
+!/.github/workflows/
+
+/Automations/*
+!/Automations/morning_line_content.py
+!/Automations/line_notifier.py
+!/Automations/README.md
+!/Automations/.env.example
+
+/scripts/*
+!/scripts/morning_line_content.py
+
+# Secrets must never be committed, even if the allowlist changes later.
+.env
+**/.env
+*.pem
+*.key
+*credentials*.json
+*secret*.json
+
+# Local and generated files.
+.DS_Store
+__pycache__/
+*.pyc
+
+# GitHub Actions artifacts and logs are generated at runtime.
+/github_data/20_AI_Business/Publisher/Ready/
+/github_data/Logs/*.log
