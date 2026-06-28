@@ -1,0 +1,71 @@
+name: Threads Performance AI
+
+on:
+  schedule:
+    # 21:30 JST is 12:30 UTC.
+    - cron: "30 12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: threads-performance
+  cancel-in-progress: false
+
+jobs:
+  analyze-and-notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TZ: Asia/Tokyo
+      THREADS_RESULTS_DIR: ${{ github.workspace }}/github_data/SNS/Threads/Results
+      THREADS_ANALYSIS_DIR: ${{ github.workspace }}/github_data/SNS/Threads/Analysis
+      LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+      LINE_TO_USER_ID: ${{ secrets.LINE_TO_USER_ID }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Prepare directories
+        run: mkdir -p github_data/SNS/Threads/Results github_data/SNS/Threads/Screenshots github_data/SNS/Threads/Analysis
+
+      - name: Validate LINE Secrets
+        run: python3 scripts/analyze_threads_performance.py --check-line
+
+      - name: Analyze Threads performance and notify LINE
+        run: python3 scripts/analyze_threads_performance.py
+
+      - name: Persist results and analysis
+        if: always()
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A -- github_data/SNS/Threads/Results github_data/SNS/Threads/Analysis
+          if git diff --cached --quiet; then
+            echo "No Threads analysis changes"
+          else
+            git commit -m "chore: save Threads performance analysis $(date +%F) [skip ci]"
+            git push
+          fi
+
+      - name: Upload analysis artifact
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: threads-performance-${{ github.run_id }}
+          path: github_data/SNS/Threads/Analysis/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Notify LINE when workflow failed
+        if: failure()
+        run: python3 scripts/analyze_threads_performance.py --notify-failure "GitHub Actionsの分析処理に失敗しました"

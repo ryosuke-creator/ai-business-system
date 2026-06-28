@@ -18,6 +18,7 @@
 
 /scripts/*
 !/scripts/morning_line_content.py
+!/scripts/analyze_threads_performance.py
 
 # Secrets must never be committed, even if the allowlist changes later.
 .env
