@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import json
 import os
@@ -25,6 +26,11 @@ RESEARCH_FILE = Path(os.environ.get("RESEARCH_FILE", ROOT_DIR / "github_data" / 
 AFFILIATE_FILE = Path(os.environ.get("AFFILIATE_FILE", ROOT_DIR / "github_data" / "Affiliate_Links.md"))
 GENERATED_DIR = Path(os.environ.get("GENERATED_DIR", ROOT_DIR / "github_data" / "Generated"))
 LOG_DIR = Path(os.environ.get("LOG_DIR", ROOT_DIR / "github_data" / "logs"))
+NOTIFICATION_STATE_DIR = Path(
+    os.environ.get(
+        "NOTIFICATION_STATE_DIR", ROOT_DIR / "github_data" / "Notification_State"
+    )
+)
 LINE_ENDPOINT = "https://api.line.me/v2/bot/message/push"
 LINE_BOT_INFO_ENDPOINT = "https://api.line.me/v2/bot/info"
 JST = ZoneInfo("Asia/Tokyo")
@@ -576,6 +582,20 @@ def send_line(text: str) -> None:
         raise MorningLineError(f"LINE接続エラー: {exc.reason}") from exc
 
 
+def send_line_once(text: str, notification_key: str, fingerprint: str | None = None) -> bool:
+    """Send once per day when the notification content is unchanged."""
+    safe_key = re.sub(r"[^a-zA-Z0-9_-]+", "-", notification_key).strip("-")
+    marker = NOTIFICATION_STATE_DIR / f"{now_jst():%Y-%m-%d}_{safe_key}.sha256"
+    digest = hashlib.sha256((fingerprint or text).encode("utf-8")).hexdigest()
+    if marker.exists() and marker.read_text(encoding="utf-8").strip() == digest:
+        print(f"Duplicate LINE notification skipped: {notification_key}")
+        return False
+    send_line(text)
+    NOTIFICATION_STATE_DIR.mkdir(parents=True, exist_ok=True)
+    marker.write_text(digest + "\n", encoding="utf-8")
+    return True
+
+
 def write_log(status: str, detail: str, output_path: Path | None = None) -> Path:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     now = now_jst()
@@ -608,7 +628,7 @@ def run(dry_run: bool = False) -> Path:
     if dry_run:
         print(message)
     else:
-        send_line(message)
+        send_line_once(message, "morning-research")
     lengths = ", ".join(f"{draft.platform}:{len(draft.body)}" for draft in drafts)
     write_log("success", f"同一ネタから4媒体分を生成（{lengths}）", output_path)
     print(output_path.relative_to(ROOT_DIR))
@@ -633,7 +653,11 @@ def main() -> int:
 
     if args.notify_failure:
         try:
-            send_line(failure_line_message(args.notify_failure))
+            send_line_once(
+                failure_line_message(args.notify_failure),
+                "morning-research-failure",
+                fingerprint=args.notify_failure,
+            )
             print("LINE failure notification sent")
             return 0
         except Exception as exc:

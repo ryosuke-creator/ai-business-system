@@ -13,7 +13,12 @@ from pathlib import Path
 from statistics import mean
 from typing import Dict, List
 
-from morning_line_content import check_line_connection, failure_line_message, now_jst, send_line
+from morning_line_content import (
+    check_line_connection,
+    failure_line_message,
+    now_jst,
+    send_line_once,
+)
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -381,7 +386,7 @@ def run(dry_run: bool = False) -> Path:
     if dry_run:
         print(message)
     else:
-        send_line(message)
+        send_line_once(message, "threads-performance")
         mark_analyzed(posts)
     print(output_path.relative_to(ROOT_DIR))
     return output_path
@@ -404,7 +409,12 @@ def main() -> int:
             return 1
     if args.notify_failure:
         try:
-            send_line(failure_line_message("Threads Performance AI: " + args.notify_failure))
+            reason = "Threads Performance AI: " + args.notify_failure
+            send_line_once(
+                failure_line_message(reason),
+                "threads-performance-failure",
+                fingerprint=reason,
+            )
             print("LINE failure notification sent")
             return 0
         except Exception as exc:

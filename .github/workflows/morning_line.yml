@@ -23,6 +23,7 @@ jobs:
       AFFILIATE_FILE: ${{ github.workspace }}/github_data/Affiliate_Links.md
       GENERATED_DIR: ${{ github.workspace }}/github_data/Generated
       LOG_DIR: ${{ github.workspace }}/github_data/logs
+      NOTIFICATION_STATE_DIR: ${{ github.workspace }}/github_data/Notification_State
       LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
       LINE_TO_USER_ID: ${{ secrets.LINE_TO_USER_ID }}
 
@@ -50,7 +51,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A -- github_data/Generated github_data/logs
+          git add -A -- github_data/Generated github_data/logs github_data/Notification_State
           if git diff --cached --quiet; then
             echo "No generated files to commit"
           else
@@ -73,3 +74,15 @@ jobs:
       - name: Notify LINE when workflow failed
         if: failure()
         run: python3 scripts/morning_line_content.py --notify-failure "GitHub Actionsの朝処理に失敗しました"
+
+      - name: Persist notification state after failure
+        if: always()
+        shell: bash
+        run: |
+          git add -A -- github_data/Notification_State
+          if git diff --cached --quiet; then
+            echo "No notification state changes"
+          else
+            git commit -m "chore: save LINE notification state $(date +%F) [skip ci]"
+            git push
+          fi

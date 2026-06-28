@@ -21,6 +21,7 @@ jobs:
       TZ: Asia/Tokyo
       THREADS_RESULTS_DIR: ${{ github.workspace }}/github_data/SNS/Threads/Results
       THREADS_ANALYSIS_DIR: ${{ github.workspace }}/github_data/SNS/Threads/Analysis
+      NOTIFICATION_STATE_DIR: ${{ github.workspace }}/github_data/Notification_State
       LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
       LINE_TO_USER_ID: ${{ secrets.LINE_TO_USER_ID }}
 
@@ -48,7 +49,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A -- github_data/SNS/Threads/Results github_data/SNS/Threads/Analysis
+          git add -A -- github_data/SNS/Threads/Results github_data/SNS/Threads/Analysis github_data/Notification_State
           if git diff --cached --quiet; then
             echo "No Threads analysis changes"
           else
@@ -69,3 +70,15 @@ jobs:
       - name: Notify LINE when workflow failed
         if: failure()
         run: python3 scripts/analyze_threads_performance.py --notify-failure "GitHub Actionsの分析処理に失敗しました"
+
+      - name: Persist notification state after failure
+        if: always()
+        shell: bash
+        run: |
+          git add -A -- github_data/Notification_State
+          if git diff --cached --quiet; then
+            echo "No notification state changes"
+          else
+            git commit -m "chore: save LINE notification state $(date +%F) [skip ci]"
+            git push
+          fi

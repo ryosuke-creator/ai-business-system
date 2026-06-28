@@ -34,6 +34,19 @@ workflow_dispatch:
 
 `22:00 UTC`は翌日の`7:00 JST`。`workflow_dispatch`によりActions画面から手動実行もできる。
 
+## LINE通知スケジュール
+
+| 通知 | JST | UTC cron | 自動実行 |
+|---|---:|---:|---|
+| Research AI | 毎朝7:00 | `0 22 * * *` | `.github/workflows/morning_line.yml` |
+| Performance AI | 毎日21:30 | `30 12 * * *` | `.github/workflows/threads_performance.yml` |
+
+- 定期LINE通知は上記2回だけ
+- 両workflowとも`workflow_dispatch`による手動実行に対応
+- `push`を実行条件にしていないため、commitやpushだけではLINEを送らない
+- 同じ日、同じ種類、同じ本文の通知は`github_data/Notification_State`の送信記録でスキップする
+- Macの旧朝7時LaunchAgentは停止し、Research AIの定期通知はGitHub Actionsへ統一する
+
 ## GitHub Secrets
 
 リポジトリの `Settings` → `Secrets and variables` → `Actions` →
