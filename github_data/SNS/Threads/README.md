@@ -15,10 +15,10 @@ github_data/SNS/Threads/
 
 ## 入力手順
 
-1. `Templates/thread_post_result_template.md`を複製する
-2. `Results/YYYY-MM-DD_投稿名.md`として保存する
+1. [[github_data/SNS/Threads/Results/今日のThreads投稿結果|今日のThreads投稿結果]]を開く
+2. Threadsの数値、本文、自己メモを入力する
 3. Threadsのインサイト画面を`Screenshots/`へ保存する
-4. テンプレートの数値、本文、自己メモを入力する
+4. 入力後に`status: draft`を`status: ready`へ変更する
 5. ResultsとScreenshotsをGitHubの`main`へ反映する
 6. Actionsの`Threads Performance AI`を手動実行する
 7. LINEと`Analysis/YYYY-MM-DD_threads_analysis.md`を確認する

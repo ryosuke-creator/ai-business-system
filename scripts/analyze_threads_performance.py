@@ -118,6 +118,8 @@ def parse_posted_at(value: str, path: Path) -> datetime:
 def load_result(path: Path) -> PostResult:
     text = path.read_text(encoding="utf-8")
     meta = frontmatter(text)
+    if meta.get("status", "ready").strip().lower() != "ready":
+        raise PerformanceError("not_ready")
     if as_bool(meta.get("分析済み", "false")):
         raise PerformanceError("already_analyzed")
     body = section(text, "投稿本文")
@@ -147,10 +149,12 @@ def pending_results() -> List[PostResult]:
     results: List[PostResult] = []
     errors: List[str] = []
     for path in sorted(RESULTS_DIR.glob("*.md")):
+        if path.name.lower() == "readme.md":
+            continue
         try:
             results.append(load_result(path))
         except PerformanceError as exc:
-            if str(exc) != "already_analyzed":
+            if str(exc) not in {"already_analyzed", "not_ready"}:
                 errors.append(str(exc))
     if errors:
         raise PerformanceError(" / ".join(errors))
