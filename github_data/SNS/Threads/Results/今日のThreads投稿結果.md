@@ -1,8 +1,8 @@
 ---
 type: threads_post_result
 status: ready
-分析済み: false
-分析日:
+分析済み: true
+分析日: 2026-06-28
 投稿日時: 2026-06-28 11:40
 投稿URL:
 投稿カテゴリ: AI活用
